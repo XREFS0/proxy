@@ -258,6 +258,39 @@ async def get_proxies_text(type: Optional[str] = "all"):
         
     return PlainTextResponse("\n".join(all_proxies))
 
+@app.get("/api/proxies/alive")
+async def get_alive_proxies_text(type: Optional[str] = "all", timeout: float = 5.0, concurrency: int = 150):
+    """
+    Scrapes and checks proxies, returning ONLY the alive ones in plain text.
+    """
+    if type == "all":
+        types_to_scrape = ["http", "socks4", "socks5"]
+    elif type in ["http", "socks4", "socks5"]:
+        types_to_scrape = [type]
+    else:
+        raise HTTPException(status_code=400, detail="Invalid proxy type.")
+        
+    # 1. Scrape
+    sources_to_scrape = {k: PROXY_SOURCES[k] for k in types_to_scrape}
+    scraped = await async_scrape_all(sources_to_scrape)
+    
+    # 2. Check
+    proxies_dict = {k: list(v) for k, v in scraped.items()}
+    selected = list(proxies_dict.keys())
+    
+    # Run the check
+    results = await async_check_all(proxies_dict, selected, concurrency, timeout)
+    
+    # 3. Extract alive proxies
+    alive_proxies = []
+    for k, v_list in results.items():
+        for p in v_list:
+            if p.get("alive"):
+                alive_proxies.append(p["proxy"])
+                
+    return PlainTextResponse("\n".join(alive_proxies))
+
+
 @app.get("/")
 async def root():
     return {"message": "Proxy Tool API is running. Check /docs for API documentation."}
